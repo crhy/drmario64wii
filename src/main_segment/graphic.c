@@ -22,6 +22,9 @@
 #include "main_menu.h"
 #include "nnsched.h"
 #include "static.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
 
 STACK(sGraphicStack, GRAPHIC_STACK_SIZE);
 
@@ -353,6 +356,13 @@ void gfxTaskStart(OSScTask *scTask, void *data_ptr, size_t data_size, s32 arg3, 
     }
 
     scTask->framebuffer = &gFramebuffers[gCurrentFramebufferIndex];
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("gfx submit");
+#endif
+    if ((data_size / 8u) > 0x1000u)
+        PORT_LOG("gfx: list overflow n=%u", (unsigned)(data_size / 8u));
+#endif
     osSendMesg(sched_gfxMQ, scTask, OS_MESG_BLOCK);
     if (flags & OS_SC_SWAPBUFFER) {
         gCurrentFramebufferIndex ^= 1;

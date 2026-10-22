@@ -16,6 +16,9 @@
 #include "PR/sched.h"
 #include "nnsched.h"
 #include "dmadata.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
 
 Audio_struct_800FAF98 *gAudio_800FAF98;
 
@@ -117,7 +120,18 @@ size_t InitMusicDriver(NNSched *sc, void *heap, size_t heap_length, size_t arg3,
 bool func_8002D3B0(RomOffset segmentRom, size_t segmentSize, void *wbank) {
     Audio_struct_800FAF98 *temp_s0 = gAudio_800FAF98;
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("f3b0 sz=%x", (u32)segmentSize);
+#endif
+    int musask = MusAsk(MUSFLAG_SONGS);
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("f3b0 musask=%d", musask);
+#endif
+    if (musask == 0) {
+#else
     if (MusAsk(MUSFLAG_SONGS) == 0) {
+#endif
         DmaRomToRam(segmentRom, temp_s0->unk_0C, segmentSize);
         MusPtrBankInitialize(temp_s0->unk_0C, wbank);
         return true;
@@ -243,15 +257,35 @@ void DmaRomToRam(RomOffset segmentRom, void *segmentVram, size_t segmentSize) {
     RomOffset currentRom = segmentRom;
     uintptr_t currentVram = (uintptr_t)segmentVram;
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("drin rem=%x v=%x", (u32)segmentSize, (u32)currentVram);
+#endif
+#endif
     while (remainingSize != 0) {
         OSIoMesg mb;
         OSMesg msg;
         size_t blkSize = MIN(remainingSize, 0x4000);
 
         osInvalDCache((void *)currentVram, blkSize);
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+        PORT_LOG("drpre2");
+#endif
+#endif
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+        PORT_LOG("drpre blk=%x v=%x", (u32)blkSize, (u32)currentVram);
+#endif
+#endif
         DMADATA_COPY_BLOCK(&mb, currentRom, currentVram, blkSize, &temp->dma_queue);
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+        PORT_LOG("drblk rem=%x", (u32)remainingSize);
+#endif
+#endif
 #if VERSION_US
         osRecvMesg(&temp->dma_queue, &msg, OS_MESG_BLOCK);
 #endif

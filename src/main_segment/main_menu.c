@@ -3,6 +3,9 @@
  */
 
 #include "main_menu.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
 
 #include "libc/stdbool.h"
 #include "libultra.h"
@@ -2649,6 +2652,12 @@ bool menuMainPanel_input(MenuMainPanel *mainPanel, s32 playerNo) {
     s32 vec = 0;
     s32 select;
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("menuPanel p=%d sel=%d cnt=%d rep=%x trans=%d", playerNo, mainPanel->select,
+             mainPanel->count, rep, (s32)mainPanel->miBase.transTime);
+#endif
+#endif
     if ((mainPanel->miBase.transStep < 0.0f) || (mainPanel->miBase.transTime < 1.0f)) {
         return false;
     }
@@ -2948,6 +2957,13 @@ bool menuNameSelPanel_input(MenuNameSelPanel *nameSelPanel) {
     s32 ok = 0;
     s32 i;
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("nameSel pc=%d d0=%d s0=%d tr=%x trans=%d", nameSelPanel->playerCount,
+             nameSelPanel->depth[0], nameSelPanel->select[0],
+             _getKeyTrg(nameSelPanel->global, 0), (s32)nameSelPanel->miBase.transTime);
+#endif
+#endif
     if ((nameSelPanel->miBase.transStep < 0.0f) || (nameSelPanel->miBase.transTime < 1.0f)) {
         return false;
     }
@@ -2984,6 +3000,11 @@ void menuNameSelPanel_update(MenuNameSelPanel *nameSelPanel, SMenuItem *parent) 
     s32 j;
 
     menuItem_update(&nameSelPanel->miBase, parent);
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("nameSelUPD trans=%d step=%d", (s32)nameSelPanel->miBase.transTime, (s32)(nameSelPanel->miBase.transStep * 1000));
+#endif
+#endif
     menuItem_updateN(nameSelPanel->miLabel, ARRAY_COUNT(nameSelPanel->miLabel), &nameSelPanel->miBase);
 
     for (i = 0; i < nameSelPanel->playerCount; i++) {
@@ -5051,6 +5072,13 @@ void menuMain_input(MenuMain *mMain) {
     u32 trg = _getKeyTrg(mMain->global, 0);
     s32 i;
     s32 select;
+
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("menuMain mode=%d trg=%x depth=%d sel=%d", mMain->mode, trg, mMain->depth,
+             mMain->select[mMain->depth]);
+#endif
+#endif
     SndIndex sound;
     s32 nameDir;
     s32 panelDir;
@@ -5931,6 +5959,22 @@ void menuMain_input(MenuMain *mMain) {
             menuMainPanel_setFrame(panel, 1, time);
         }
     }
+
+#ifdef TARGET_WII
+    {
+        extern unsigned port_frame_now(void);
+        static s32 lastMode = -1;
+        static s32 lastSel = -0x7FFFFFFF;
+        s32 curMode = (s32)mMain->mode;
+        s32 curSel = mMain->select[mMain->depth];
+
+        if (curMode != lastMode || curSel != lastSel) {
+            lastMode = curMode;
+            lastSel = curSel;
+            PORT_LOG("menu: mode=%d sel=%d f=%u", curMode, curSel, port_frame_now());
+        }
+    }
+#endif
 
     _menuMain_lastMode = mMain->mode;
     _menuMain_lastDepth = mMain->depth;
@@ -7425,6 +7469,11 @@ void menuChSel_input1(MenuChSel *chSel, s32 playerNo, s32 contNo) {
     SndIndex sound = SND_INDEX_INVALID;
     u32 lvl = _getKeyLvl(chSel->global, contNo);
 
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("chsel p=%d cont=%d trg=%x depth=%d sub=%d", playerNo, contNo, (unsigned)trg,
+             chSel->depth[playerNo], chSel->subDepth);
+#endif
+
     switch (chSel->depth[playerNo]) {
         case -0x1:
             chSel->depth[playerNo] = 0;
@@ -8277,6 +8326,10 @@ void menuPlay2_input(MenuPlay2 *play2) {
     if (play2->panel[0].miBase.transTime < 1.0f) {
         return;
     }
+
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("play2 depth=%d master=%d mode=%d", (int)play2->depth, (int)play2->master, (int)_getMode(play2->global));
+#endif
 
     if (play2->master >= 0) {
         u32 trg = _getKeyTrg(play2->global, play2->master);
@@ -11100,6 +11153,10 @@ void menuAll_update(SMenuAll *all) {
     s32 j;
 
     all->fadeRatio = CLAMP(all->fadeRatio + all->fadeStep, 0.0f, 1.0f);
+
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("mall now=%d new=%d fadeS=%d fadeR=%d", (int)all->nowMode, (int)all->newMode, (int)(all->fadeStep * 100.0f), (int)(all->fadeRatio * 100.0f));
+#endif
 
     fade = (all->fadeRatio - DOUBLE_LITERAL(0.5)) * DOUBLE_LITERAL(1.2) + DOUBLE_LITERAL(0.5);
     fade = DOUBLE_LITERAL(1) - CLAMP(fade, 0.0f, 1.0f);

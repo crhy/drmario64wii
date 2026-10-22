@@ -124,7 +124,9 @@ void   __MusIntAudManInit(musConfig *config, int vsyncs_per_second, int fx_type)
    stack_addr = __MusIntMemMalloc(AUDIO_STACKSIZE);
    osCreateThread(&thread, 3, __MusIntThreadProcess, 0,
                    (void *)(stack_addr+AUDIO_STACKSIZE/sizeof(u64)), config->thread_priority);
+#ifndef PORT_NO_MUSIC
    osStartThread(&thread);
+#endif
 }
 
 /*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
@@ -188,7 +190,17 @@ static void __MusIntThreadProcess(void *ignored)
       /* call driver to generate audio commands and download samples */
       task = &audio_tasks[task_count];
       task->frame_samples = __MusIntSamplesCurrent(samples);
+#ifdef PORT_NO_SYNTH
+      cmdp = audio_command_list; commands = 0;
+#else
       cmdp = alAudioFrame(audio_command_list, &commands, (short *)osVirtualToPhysical(task->data), task->frame_samples);
+#if defined(TARGET_WII) && defined(PORT_SCHED_DUMP2)
+void PORT_LOG(const char *fmt, ...);
+      { static int s_z; if (!commands && s_z < 3) { extern ALGlobals *alGlobals; s_z++;
+        PORT_LOG("aud: zero cmds samples=%u fs=%u glob=%p head=%p", (unsigned)samples, (unsigned)task->frame_samples,
+                 (void *)alGlobals, alGlobals ? (void *)alGlobals->drvr.head : 0); } }
+#endif
+#endif
       /* start audio task if required */
       if(commands)
       {

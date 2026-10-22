@@ -10,6 +10,9 @@
 #include "unk.h"
 
 #include "audio/music_driver.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
 #include "nnsched.h"
 
 #include "boot_data.h"
@@ -243,7 +246,7 @@ void func_8002AC64(struct_800FACE0_unk_08 *arg0) {
 void dm_audio_set_stereo(bool setStereo UNUSED) {
     u32 *funcPtr[2] UNUSED = { (u32 *)alEnvmixerPull + 0x10C / 4, (u32 *)alEnvmixerPull + 0x2EC / 4 };
 
-#if VERSION_US || VERSION_GW
+#if (VERSION_US || VERSION_GW) && !defined(TARGET_WII)
     if (setStereo) {
         *funcPtr[0] = 0x92220012; // lbu         $v0, 0x12($s1)
         *funcPtr[1] = 0x8C82000C; // lw          $v0, 0xC($a0)
@@ -252,9 +255,11 @@ void dm_audio_set_stereo(bool setStereo UNUSED) {
         *funcPtr[0] = 0x24020040; // addiu       $v0, $zero, 0x40
         *funcPtr[1] = 0x24020040; // addiu       $v0, $zero, 0x40
     }
-#endif
-
     osWritebackDCacheAll();
+#else
+    (void)setStereo;
+    (void)funcPtr;
+#endif
 }
 
 /**
@@ -279,14 +284,23 @@ void dm_audio_init_driver(NNSched *sc) {
                     _romDataTbl[ROMDATATBL_FXBANK][ROMTABLEPAIR_END] -
                         _romDataTbl[ROMDATATBL_FXBANK][ROMTABLEPAIR_START],
                     4, THREAD_PRI_MUSIC_DRIVER);
+#ifdef TARGET_WII
+    PORT_LOG("au:musinit");
+#endif
 
     func_8002D3B0(_romDataTbl[ROMDATATBL_N64_PTR_TABLES][ROMTABLEPAIR_START],
                   _romDataTbl[ROMDATATBL_N64_PTR_TABLES][ROMTABLEPAIR_END] -
                       _romDataTbl[ROMDATATBL_N64_PTR_TABLES][ROMTABLEPAIR_START],
                   (void *)_romDataTbl[ROMDATATBL_N64_WAVE_TABLES][ROMTABLEPAIR_START]);
+#ifdef TARGET_WII
+    PORT_LOG("au:ptrbank");
+#endif
     func_8002D6A4(_romDataTbl[ROMDATATBL_FXBANK][ROMTABLEPAIR_START],
                   _romDataTbl[ROMDATATBL_FXBANK][ROMTABLEPAIR_END] -
                       _romDataTbl[ROMDATATBL_FXBANK][ROMTABLEPAIR_START]);
+#ifdef TARGET_WII
+    PORT_LOG("au:fxbank");
+#endif
 }
 
 /**

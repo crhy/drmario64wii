@@ -8,6 +8,10 @@
 
 #include "macros_defines.h"
 #include "dm_thread.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#include "port_audio.h"
+#endif
 
 STACK(nnScStack, NN_SC_STACKSIZE);
 STACK(nnScAudioStack, NN_SC_STACKSIZE);
@@ -20,6 +24,11 @@ u32 framecont = 0;
 
 u8 D_80088104 = 1;
 s8 D_80088105 = 0;
+
+#ifdef TARGET_WII
+unsigned g_sc_recv;
+unsigned g_sc_bcast;
+#endif
 
 #ifdef NN_SC_PERF
 /**
@@ -73,7 +82,16 @@ void nnScCreateScheduler(NNSched *sc, u8 viModeIndex, u8 retraceCount) {
     sc->prenmiMsg = NN_SC_PRE_NMI_MSG;
 
     /* create message queue */
+#ifdef TARGET_WII
+    /* Back-pressure: the async event pump (libogc LWP) can outrun this
+     * handler's consumption, so a deep retraceMQ lets retrace events pile up
+     * and keeps thread 19 draining them in a tight loop, starving the lower-
+     * priority game threads. Size 1 forces the handler to block after each
+     * broadcast, so the scheduler interleaves the game threads once per retrace. */
+    osCreateMesgQueue(&sc->retraceMQ, sc->retraceMsgBuf, 1);
+#else
     osCreateMesgQueue(&sc->retraceMQ, sc->retraceMsgBuf, ARRAY_COUNT(sc->retraceMsgBuf));
+#endif
     osCreateMesgQueue(&sc->rspMQ, sc->rspMsgBuf, ARRAY_COUNT(sc->rspMsgBuf));
     osCreateMesgQueue(&sc->rdpMQ, sc->rdpMsgBuf, ARRAY_COUNT(sc->rdpMsgBuf));
     osCreateMesgQueue(&sc->graphicsRequestMQ, sc->graphicsRequestBuf, ARRAY_COUNT(sc->graphicsRequestBuf));
@@ -82,6 +100,9 @@ void nnScCreateScheduler(NNSched *sc, u8 viModeIndex, u8 retraceCount) {
 
     /* video mode settings  */
     osCreateViManager(OS_PRIORITY_VIMGR);
+#ifdef TARGET_WII
+    PORT_LOG("sc:vi");
+#endif
     osViSetMode(&osViModeTable[viModeIndex]);
     osViBlack(true);
 
@@ -90,11 +111,17 @@ void nnScCreateScheduler(NNSched *sc, u8 viModeIndex, u8 retraceCount) {
     osSetEventMesg(OS_EVENT_SP, &sc->rspMQ, (OSMesg)RSP_DONE_MSG);
     osSetEventMesg(OS_EVENT_DP, &sc->rdpMQ, (OSMesg)RDP_DONE_MSG);
     osSetEventMesg(OS_EVENT_PRENMI, &sc->retraceMQ, (OSMesg)PRE_NMI_MSG);
+#ifdef TARGET_WII
+    PORT_LOG("sc:ev");
+#endif
 
     /* start scheduler thread */
     osCreateThread(&sc->schedulerThread, THREAD_ID_NN_SC_EVENT, nnScEventHandler, sc, STACK_TOP(nnScStack),
                    THREAD_PRI_NN_SC_EVENT);
     osStartThread(&sc->schedulerThread);
+#ifdef TARGET_WII
+    PORT_LOG("sc:sched");
+#endif
 
 #ifdef NN_SC_PERF
     func_8002B8B4_cn();
@@ -103,10 +130,16 @@ void nnScCreateScheduler(NNSched *sc, u8 viModeIndex, u8 retraceCount) {
     osCreateThread(&sc->audioThread, THREAD_ID_NN_SC_AUDIO, nnScExecuteAudio, sc, STACK_TOP(nnScAudioStack),
                    THREAD_PRI_NN_SC_AUDIO);
     osStartThread(&sc->audioThread);
+#ifdef TARGET_WII
+    PORT_LOG("sc:audio");
+#endif
 
     osCreateThread(&sc->graphicsThread, THREAD_ID_NN_SC_GRAPHICS, nnScExecuteGraphics, sc, STACK_TOP(nnScGraphicsStack),
                    THREAD_PRI_NN_SC_GRAPHICS);
     osStartThread(&sc->graphicsThread);
+#ifdef TARGET_WII
+    PORT_LOG("sc:gfx");
+#endif
 }
 
 /**
@@ -139,6 +172,12 @@ void nnScEventHandler(void *arg) {
         NNSched *ptr = arg;
 
         osRecvMesg(&ptr->retraceMQ, (OSMesg)&msg, OS_MESG_BLOCK);
+
+#ifdef TARGET_WII
+        g_sc_recv++;
+        if ((g_sc_recv % 60u) == 0u)
+            PORT_LOG("sc/sec: recv=%u bcast=%u", g_sc_recv, g_sc_bcast);
+#endif
 
 #ifdef NN_SC_PERF
         if (!D_80092F10_cn) {
@@ -238,7 +277,16 @@ void nnScEventBroadcast(NNSched *sc, NNScMsg *msg) {
 
     /* inform necessary clients of retrace message */
     while (client != NULL) {
+#ifdef TARGET_WII
+        g_sc_bcast++;
+        s32 rc = osSendMesg(client->msgQ, msg, OS_MESG_NOBLOCK);
+#ifdef PORT_LOG_VERBOSE
+        PORT_LOG("bcast mq=%p vc=%d rc=%d", (void *)client->msgQ, (int)client->msgQ->validCount, (int)rc);
+#endif
+        (void)rc;
+#else
         osSendMesg(client->msgQ, msg, OS_MESG_NOBLOCK);
+#endif
         client = client->next;
     }
 }
@@ -267,6 +315,12 @@ void nnScExecuteAudio(void *arg) {
         /* Inspect current RSP stack */
         gfxTask = sc->curGraphicsTask;
         yieldFlag = 0;
+#ifdef TARGET_WII
+        /* Wii: the RSP LWP runs gfx tasks to completion and osSpTaskYield is a
+         * no-op, so there is nothing to yield and no rspMQ round-trip: audio
+         * runs synchronously below (yieldFlag stays 0). */
+        (void)gfxTask;
+#else
         if (gfxTask != NULL) {
             /* wait for graphic task to end (yield) */
             osSpTaskYield();
@@ -275,6 +329,7 @@ void nnScExecuteAudio(void *arg) {
             /* verify that task has actually yielded */
             yieldFlag = (osSpTaskYielded(&gfxTask->list) != 0) ? 1 : 2;
         }
+#endif
 
 #ifdef NN_SC_PERF
         func_8002BC30_cn(ENUM_8002BA98_CN_ARG0_7);
@@ -288,10 +343,14 @@ void nnScExecuteAudio(void *arg) {
 
         sc->curAudioTask = task;
         /* execute task */
+#ifdef TARGET_WII
+        port_audio_task_run(&task->list);
+#else
         osSpTaskStart(&task->list);
 
         /* wait for end of RSP task */
         osRecvMesg(&sc->rspMQ, &msg, OS_MESG_BLOCK);
+#endif
         sc->curAudioTask = NULL;
 
 #ifdef NN_SC_PERF
@@ -521,5 +580,21 @@ void func_8002BD7C_cn(Gfx **gfxP, s32 arg1 UNUSED, s32 arg2 UNUSED) {
     s32 what[4] UNUSED;
 
     gDPPipeSync(gfx);
+}
+#endif
+
+#if defined(TARGET_WII) && defined(PORT_SCHED_DUMP2)
+/* Diagnostics: walk the scheduler client list (called from port_sched_dump). */
+void port_nnsched_dump(void) {
+    extern NNSched B_800EB670;
+    NNScClient *c = B_800EB670.clientList;
+    int n = 0;
+    while (c != NULL && n < 12) {
+        PORT_LOG(" client %d c=%p mq=%p vc=%d/%d next=%p", n, (void *)c, (void *)c->msgQ,
+                 c->msgQ ? (int)c->msgQ->validCount : -1, c->msgQ ? (int)c->msgQ->msgCount : -1, (void *)c->next);
+        c = c->next;
+        n++;
+    }
+    PORT_LOG(" clients=%d", n);
 }
 #endif

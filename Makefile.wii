@@ -1,0 +1,197 @@
+# Dr. Mario 64 -> Wii native port: Wii build skeleton.
+# Build with: make -f Makefile.wii   (do NOT touch the N64 Makefile)
+# Requires DEVKITPRO/DEVKITPPC in the environment (see _header.md); falls back to defaults.
+
+ifeq ($(strip $(DEVKITPRO)),)
+DEVKITPRO := /home/rhy/devkitpro
+endif
+ifeq ($(strip $(DEVKITPPC)),)
+DEVKITPPC := $(DEVKITPRO)/devkitPPC
+endif
+
+CC       := $(DEVKITPPC)/bin/powerpc-eabi-gcc
+ELF2DOL  := $(DEVKITPRO)/tools/bin/elf2dol
+OBJCOPY  := $(DEVKITPPC)/bin/powerpc-eabi-objcopy
+
+.DEFAULT_GOAL := all
+
+CFLAGS   := -O2 -fno-strict-aliasing -fno-common -mrvl -mcpu=750 -meabi -mhard-float -DGEKKO -DTARGET_WII -DVERSION_US -fsigned-char \
+            -D_LANGUAGE_C -D_MIPS_SZLONG=32 \
+            -I$(DEVKITPRO)/libogc/include -Iport/include \
+            -Ilib/ultralib/include -Ilib/ultralib/include/PR -Iinclude -I. $(EXTRA_CFLAGS)
+LDFLAGS  := -mrvl -L$(DEVKITPRO)/libogc/lib/wii -lwiiuse -lbte -lfat -logc -lm -logc
+
+OUT      := build/wii
+ELF      := $(OUT)/drmario64.elf
+DOL      := $(OUT)/drmario64.dol
+
+VERSION  := 0.1.0
+HBC_DIR  := $(OUT)/apps/drmario64
+ISO      := $(OUT)/drmario64.iso
+ISO_SRC  := $(OUT)/iso_src
+
+# N64 symbol table for the Wii link (segment boundaries + asset addresses).
+N64_ELF  := build/us/drmario64.us.elf
+SYMS     := port/gen/n64_syms.ld
+
+# Embedded uncompressed ROM (PI DMA copies from it; see DESIGN.md UNCOMPRESSED_ROM).
+ROM_BIN  := $(OUT)/port_rom.bin
+ROM_OBJ  := $(OUT)/port_rom.o
+
+# Optional input-script blob (task 11). Defined BEFORE the $(ELF) rule so its
+# prerequisites expand non-empty at parse time. When PORT_INPUT_SCRIPT=path is
+# given on the make command line, embed that file's bytes as the symbols
+# port_input_script / port_input_script_end (the weak externs os_cont.c reads).
+# Unset -> INPUT_SCRIPT_OBJ is empty -> the weak externs stay undefined -> os_cont.c
+# falls back to sd:/drmario/input.txt at runtime. The GATE passes -DPORT_INPUT_SCRIPT
+# only as a compiler macro (no make var), so this block is inert there.
+INPUT_SCRIPT_OBJ :=
+ifneq ($(PORT_INPUT_SCRIPT),)
+INPUT_SCRIPT_OBJ := $(OUT)/input_script.o
+$(OUT)/input_script.bin: $(PORT_INPUT_SCRIPT)
+	@mkdir -p $(dir $@)
+	@cp $< $@
+$(OUT)/input_script.o: $(OUT)/input_script.bin
+	@mkdir -p $(dir $@)
+	$(OBJCOPY) -I binary -O elf32-powerpc -B powerpc $(OUT)/input_script.bin $(OUT)/input_script.o \
+		--redefine-sym _binary_build_wii_input_script_bin_start=port_input_script \
+		--redefine-sym _binary_build_wii_input_script_bin_end=port_input_script_end
+endif
+
+# Game C sources compiled for Wii (objects only, no link).
+GAME_SRCS := $(wildcard src/boot/*.c) \
+             $(wildcard src/main_segment/*.c) \
+             $(wildcard src/main_segment/audio/*.c) \
+             $(wildcard src/main_segment/graphics/*.c) \
+             $(wildcard src/main_segment/screen_print/*.c) \
+             $(wildcard src/gzip/*.c) \
+             $(wildcard src/buffers/*.c) \
+             $(wildcard src/libnustd/*.c) \
+             $(wildcard src/libegcs/*.c) \
+             $(wildcard src/dma_table/*.c) \
+             $(wildcard               lib/libmus/src/*.c)
+
+# player.c #includes player_commands.c/player_api.c/player_fifo.c directly, so
+# they must NOT be compiled as separate translation units (duplicate symbols).
+GAME_SRCS += $(addprefix lib/ultralib/src/gu/,mtxutil.c ortho.c perspective.c translate.c scale.c rotate.c rotaterpy.c mtxcatf.c mtxcatl.c sins.c coss.c normalize.c frustum.c position.c lookat.c)
+GAME_SRCS := $(filter-out lib/libmus/src/player_api.c lib/libmus/src/player_commands.c lib/libmus/src/player_fifo.c,$(GAME_SRCS))
+
+GAME_OBJ  := $(OUT)/obj
+GAME_OBJS := $(patsubst %.c,$(GAME_OBJ)/%.o,$(GAME_SRCS))
+
+# -I flags the N64 Makefile uses (IINC), so game code finds its headers.
+N64_IINC  := -Ilib/ultralib/include -Ilib/ultralib/include/PR \
+             -Ilib/libmus/include -Ilib/ultralib/include/gcc \
+             -Ibin/us -Ibuild/us/bin/us -Ibuild/us -I.
+
+GAME_CFLAGS := $(CFLAGS) -include port/include/n64_gu_rename.h -fsigned-char -DTARGET_WII -DVERSION_US -DNON_MATCHING -DAVOID_UB \
+               -DUNCOMPRESSED_ROM \
+               -fno-strict-aliasing -fcommon -w \
+               -D_LANGUAGE_C -D__IS_KMC__=1 -D_MIPS_SZLONG=32 -D__USE_ISOC99 \
+               -DSCOMMON_IN_COMMON=1 -DF3DEX_GBI_2 -DNDEBUG -D_FINALROM -DBUILD_VERSION=8 \
+               -Iport/include -Iinclude $(N64_IINC)
+
+# N64 flag policy: regular .c files use -fcommon (COMMON symbols, type C);
+# COMMON.o/scommon.o/buffers use -fno-common (strong .bss defs, type B). The
+# COMMON.o defs merge with the .c COMMON refs, so no multiple-definition clash.
+$(GAME_OBJ)/src/%/COMMON.o $(GAME_OBJ)/src/%/scommon.o $(GAME_OBJ)/src/buffers/%.o: GAME_CFLAGS += -fno-common
+
+# Source list: later tasks append files here.
+WII_SRCS := port/wii/main.c port/wii/log.c port/ultra/os_events.c port/ultra/os_sp.c port/ultra/os_stub.c port/ultra/os_sched.c port/wii/crash.c port/wii/sentinel.c port/game/calcsub.c port/gfx/gfx.c port/gfx/gfx_xform.c port/gfx/gfx_gx.c port/gfx/gfx_tmem.c port/gfx/gfx_texconv.c port/gfx/gfx_tex.c port/gfx/gfx_wrap.c port/gfx/gfx_cc.c port/gfx/gfx_rm.c port/gfx/gfx_clip.c port/gfx/gfx_state.c
+WII_SRCS += port/ultra/os_cont.c
+WII_SRCS += port/wii/pad_wii.c
+WII_SRCS += port/ultra/os_rsp.c port/wii/irqlock.c
+WII_SRCS += port/ultra/os_eeprom.c
+WII_SRCS += port/audio/naudio.c
+WII_SRCS += port/ultra/port_canary.c
+WII_SRCS += port/wii/heapchk.c
+WII_SRCS += port/wii/guard.c
+WII_SRCS += $(wildcard lib/ultralib/src/audio/*.c)
+WII_CFLAGS_EXTRA := -DF3DEX_GBI_2
+ifeq ($(WII_SELFTEST),1)
+WII_SRCS += port/ultra/test_threads.c
+WII_CFLAGS_EXTRA := -DWII_SELFTEST=1
+endif
+
+WII_OBJS := $(patsubst %.c,$(OUT)/%.o,$(WII_SRCS))
+
+all: $(DOL)
+
+objs: $(GAME_OBJS)
+
+$(GAME_OBJ)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(GAME_CFLAGS) -I $(dir $<) -I build/us/$(dir $<) -c $< -o $@
+
+$(DOL): $(ELF)
+	$(ELF2DOL) $(ELF) $(DOL)
+
+$(ELF): $(WII_OBJS) $(GAME_OBJS) $(ROM_OBJ) $(INPUT_SCRIPT_OBJ) $(SYMS)
+	$(CC) $(CFLAGS) $(WII_CFLAGS_EXTRA) $(WII_OBJS) $(GAME_OBJS) $(ROM_OBJ) $(INPUT_SCRIPT_OBJ) -o $(ELF) $(LDFLAGS) -Wl,$(SYMS) -Wl,port/gen/wii_text.ld
+
+# Regenerate the N64 symbol linker script whenever the N64 ELF changes.
+# It is passed as an extra ld script (positional -Wl arg), so it only adds
+# symbol definitions and never replaces devkitPPC's default link script.
+$(SYMS): $(N64_ELF)
+	@mkdir -p $(dir $(SYMS))
+	@python3 port/tools/gen_syms.py
+
+# Embed the uncompressed ROM as a binary object with clean symbol names.
+$(ROM_BIN): build/us/drmario64_uncompressed.us.z64
+	@mkdir -p $(dir $(ROM_BIN))
+	@cp $< $(ROM_BIN)
+
+$(ROM_OBJ): $(ROM_BIN)
+	@mkdir -p $(dir $(ROM_OBJ))
+	$(OBJCOPY) -I binary -O elf32-powerpc -B powerpc $(ROM_BIN) $(ROM_OBJ) \
+		--redefine-sym _binary_build_wii_port_rom_bin_start=port_rom \
+		--redefine-sym _binary_build_wii_port_rom_bin_end=port_rom_end \
+		--redefine-sym _binary_build_wii_port_rom_bin_size=port_rom_size
+
+$(OUT)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(WII_CFLAGS_EXTRA) -c $< -o $@
+
+# --- Homebrew Channel package ---
+$(HBC_DIR)/boot.dol: $(DOL)
+	@mkdir -p $(dir $@)
+	@cp $(DOL) $@
+
+$(HBC_DIR)/icon.png:
+	@mkdir -p $(dir $@)
+	@python3 port/tools/make_icon.py $@
+
+$(HBC_DIR)/meta.xml:
+	@mkdir -p $(dir $@)
+	@printf '<?xml version="1.0" encoding="utf-8"?>\n<app>\n<name>Dr. Mario 64</name>\n<coder>rhY</coder>\n<version>%s</version>\n<short_description>Native Wii port</short_description>\n<long_description></long_description>\n<release_date></release_date>\n<arguments></arguments>\n</app>\n' '$(VERSION)' > $@
+
+hbc: $(HBC_DIR)/boot.dol $(HBC_DIR)/meta.xml $(HBC_DIR)/icon.png
+
+# --- Wii ISO -------------------------------------------------------------------------------------------------
+# A bootable Wii disc needs the system files of a real disc (boot.bin, bi2.bin, apploader.img, ticket/tmd/cert).
+# They are taken once from any Wii disc image you own (DISC_TEMPLATE) into build/disc_tmpl/ (survives `clean`,
+# never committed); none of that disc's game files are used. The DOL's BSS field is zeroed for the retail apploader
+# (port/tools/dol_for_disc.py). Result: fake-signed build/wii/drmario64.iso, ID RDMP01.
+#   make -f Makefile.wii iso DISC_TEMPLATE=/path/to/any_wii_disc.wbfs
+WIT          ?= .strata/bin/wit
+DISC_TMPL    := build/disc_tmpl
+DISC_TEMPLATE ?=
+$(DISC_TMPL)/sys/apploader.img:
+	@[ -n "$(DISC_TEMPLATE)" ] || { echo "iso: set DISC_TEMPLATE=<a Wii disc image you own> (first time only)"; exit 1; }
+	@rm -rf $(DISC_TMPL)
+	$(WIT) extract "$(DISC_TEMPLATE)" $(DISC_TMPL) --psel data --files "-/files/" -q
+	@rm -f $(DISC_TMPL)/sys/main.dol $(DISC_TMPL)/sys/fst.bin
+
+$(ISO): $(DOL) $(DISC_TMPL)/sys/apploader.img port/tools/dol_for_disc.py
+	@rm -rf $(ISO_SRC) && cp -r $(DISC_TMPL) $(ISO_SRC) && mkdir -p $(ISO_SRC)/files
+	@echo "Dr. Mario 64 - native Wii port" > $(ISO_SRC)/files/readme.txt
+	@sed -i 's/^!part-id = .*/!part-id = RDMP01/; s/^!part-name = .*/!part-name = Dr. Mario 64/' $(ISO_SRC)/setup.txt
+	@python3 port/tools/dol_for_disc.py $(DOL) $(ISO_SRC)/sys/main.dol
+	$(WIT) copy $(ISO_SRC) $@ --iso --id RDMP01 --name "Dr. Mario 64" --region USA --overwrite -q
+
+iso: $(ISO)
+
+clean:
+	@rm -rf $(OUT)
+
+.PHONY: all clean objs hbc iso

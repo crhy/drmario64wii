@@ -7599,6 +7599,11 @@ void dm_game_draw_snap_bg(Gfx **gfxP, Mtx **mtxP UNUSED, Vtx **vtxP UNUSED, bool
     s32 width;
     s32 i;
 
+#ifdef TARGET_WII
+    extern void PORT_LOG(const char *fmt, ...);
+    PORT_LOG("snapbg called sn=%d fmc=%d", (int)st->bg_snapping, (int)st->frame_move_count);
+#endif
+
     if (st->bg_snapping) {
         gDPSetColorImage(gfx++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH + 8, osVirtualToPhysical(st->bg_snap_buf));
     }
@@ -7842,7 +7847,10 @@ void dm_game_draw_snap_bg(Gfx **gfxP, Mtx **mtxP UNUSED, Vtx **vtxP UNUSED, bool
  */
 void dm_game_draw_snapped_bg(Gfx **gfxP) {
     Gfx *gfx = *gfxP;
-
+#ifdef TARGET_WII
+    extern void PORT_LOG(const char *fmt, ...);
+    PORT_LOG("redraw CopyTexBlock16 w=%d h=%d", SCREEN_WIDTH + 8, SCREEN_HEIGHT);
+#endif
     CopyTexBlock16(&gfx, watchGame->bg_snap_buf, 0, 0, SCREEN_WIDTH + 8, SCREEN_HEIGHT);
     *gfxP = gfx;
 }
@@ -7858,8 +7866,17 @@ enum_main_no dm_game_main(NNSched *sc) {
     bool loop_flg = true;
     DmMainCnt gs;
     struct_watchGame *st;
+#ifdef TARGET_WII
+    static unsigned g_logic_n;
+#endif
 
     key_cntrol_init();
+
+#ifdef TARGET_WII
+    extern void PORT_LOG(const char *fmt, ...);
+    PORT_LOG("game: start players=%d gamesel=%d gamemode=%d story=%d", (int)evs_playcnt, (int)evs_gamesel,
+             (int)evs_gamemode, (int)evs_story_flg);
+#endif
 
     osCreateMesgQueue(&scMQ, scMsgBuf, ARRAY_COUNT(scMsgBuf));
     nnScAddClient(sc, &scClient, &scMQ);
@@ -7880,6 +7897,16 @@ enum_main_no dm_game_main(NNSched *sc) {
         s16 *sp50;
 
         osRecvMesg(&scMQ, (OSMesg *)&sp50, OS_MESG_BLOCK);
+
+#ifdef TARGET_WII
+        {
+            static unsigned g_sc_in, g_sc_vid;
+            g_sc_in++;
+            if (*sp50 == 1) g_sc_vid++;
+            if ((g_sc_in % 60u) == 0u)
+                PORT_LOG("game/sec: in=%u vid=%u gs=%d lf=%d logic=%u", g_sc_in, g_sc_vid, (int)evs_gamespeed, (int)loop_flg, g_logic_n);
+        }
+#endif
 
 #ifdef NN_SC_PERF
         if (D_80092F10_cn) {
@@ -7923,6 +7950,14 @@ enum_main_no dm_game_main(NNSched *sc) {
                 }
                 gs = dm_game_main2();
                 loop_flg = gs == dm_ret_null;
+#ifdef TARGET_WII
+                {
+                    extern unsigned port_frame_now(void);
+                    g_logic_n++;
+                    if ((g_logic_n % 60u) == 0u)
+                        PORT_LOG("logic n=%u vi=%u", g_logic_n, port_frame_now());
+                }
+#endif
             }
 
             gControllerPressedButtons[0] = joybak;
@@ -8399,6 +8434,10 @@ void dm_game_graphic2(void) {
     F3RCPinitRtn();
     gfxSetScissor(&gGfxHead, GFXSETSCISSOR_INTERLACE_NO, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     F3ClearFZRtn(debug_flag);
+#ifdef TARGET_WII
+    extern void PORT_LOG(const char *fmt, ...);
+    PORT_LOG("g2 dbg=%d fmc=%d cbf=%d sn=%d", (int)debug_flag, (int)st->frame_move_count, (int)st->coffee_break_flow, (int)st->bg_snapping);
+#endif
     if (!debug_flag) {
         if (st->frame_move_count < FRAME_MOVEMENT_MAX) {
             dm_game_draw_snap_bg(&gGfxHead, &mtx, &vtx, true);

@@ -23,6 +23,10 @@
 #include "main_menu.h"
 #include "nnsched.h"
 
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
+
 NNSched B_800EB670;
 
 /**
@@ -40,7 +44,9 @@ enum_main_no main_old;
  */
 void mainproc(void *arg UNUSED) {
     EepRom_DumpDataSize();
-
+#ifdef TARGET_WII
+    PORT_LOG("mp:eep");
+#endif
     switch (osTvType) {
         case OS_TV_NTSC:
             nnScCreateScheduler(&B_800EB670, OS_VI_NTSC_LAN1, 1);
@@ -65,10 +71,19 @@ void mainproc(void *arg UNUSED) {
 
     dm_audio_init_driver(&B_800EB670);
     gfxInit(gfx_freebuf);
+#ifdef TARGET_WII
+    PORT_LOG("mp:audio gfx");
+#endif
     gfxCreateGraphicThread(&B_800EB670);
     osViSetSpecialFeatures(OS_VI_DITHER_FILTER_ON | OS_VI_GAMMA_DITHER_OFF | OS_VI_GAMMA_OFF);
     joyInit(MAXCONTROLLERS);
+#ifdef TARGET_WII
+    PORT_LOG("mp:gfxjoy");
+#endif
     evs_playmax = joyResponseCheck();
+#ifdef TARGET_WII
+    PORT_LOG("mp:joy ok tv=%d main_no=%d", (int)osTvType, (int)main_no);
+#endif
 
     if ((evs_playmax == 0) && (main_no == MAIN_11)) {
         main_no = MAIN_CONT_ERROR;
@@ -79,7 +94,16 @@ void mainproc(void *arg UNUSED) {
 
     while (true) {
         enum_main_no main_bak = main_no;
-
+#ifdef TARGET_WII
+        {
+            static int s_mp_prev = -1;
+            if ((int)main_no != s_mp_prev) {
+                s_mp_prev = (int)main_no;
+                PORT_LOG("mp loop main_no=%d", (int)main_no);
+                PORT_LOG("heap: hw=%u of %u", port_heap_hw(), (unsigned)(0x80205000u - 0x80124610u));
+            }
+        }
+#endif
         switch (main_no) {
             case MAIN_11:
                 main_no = main11();

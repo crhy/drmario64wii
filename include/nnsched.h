@@ -7,7 +7,11 @@
 #include "stack.h"
 #include "unk.h"
 
+#ifdef TARGET_WII
+#define NN_SC_STACKSIZE    0x10000 /* thread stack size (PPC frames are larger) */
+#else
 #define NN_SC_STACKSIZE    0x2000  /* thread stack size */
+#endif
 #define NN_SC_SWAPBUFFER   0x0040  /* frame buffer swap */
 #define NN_SC_RETRACE_MSG  1  /* retrace message */
 #define NN_SC_DONE_MSG     2  /* task end message */

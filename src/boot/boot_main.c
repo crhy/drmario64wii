@@ -9,13 +9,21 @@
 #include "dmadata.h"
 #include "dm_thread.h"
 #include "util.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
 
 void Idle_ThreadEntry(void *arg);
 
 static OSThread sIdleThread;
 static OSThread sMainThread;
+#ifdef TARGET_WII
+static STACK(sIdleStack, 0x10000);
+static STACK(sMainStack, 0x10000);
+#else
 static STACK(sIdleStack, 0x2000);
 static STACK(sMainStack, 0x2000);
+#endif
 STACK(gBootThreadStack, BOOT_STACK_SIZE);
 
 void Idle_Nop(void) {
@@ -38,6 +46,13 @@ void bootproc(void) {
 }
 
 void Main_ThreadEntry(void *arg) {
+#ifdef TARGET_WII
+    /* The DOL loader already placed the main segment and zeroed .bss, and
+     * gMainSegmentDmaInfo.entry is statically initialized to mainproc, so
+     * there is no ROM to DMA/decompress. Call the entry function directly. */
+    PORT_LOG("boot:entry");
+    gMainSegmentDmaInfo.entry(arg);
+#else
     RomOffset mainSegmentStart;
 
     DmaData_RomToRam(SEGMENT_ROM_START(dma_table), &gMainSegmentDmaInfo, SEGMENT_ROM_SIZE(dma_table));
@@ -55,17 +70,29 @@ void Main_ThreadEntry(void *arg) {
 #endif
 
     gMainSegmentDmaInfo.entry(arg);
+#endif
 }
 
 OSMesg sPiMgrCmdBuff[SPIMGRCMDBUFF_LEN];
 OSMesgQueue sPiMgrCmdQueue;
 
 void Idle_ThreadEntry(void *arg) {
+#ifdef TARGET_WII
+    PORT_LOG("idle:entry");
+#endif
     osCreatePiManager(OS_PRIORITY_PIMGR, &sPiMgrCmdQueue, sPiMgrCmdBuff, ARRAY_COUNT(sPiMgrCmdBuff));
     osCreateThread(&sMainThread, THREAD_ID_MAIN, Main_ThreadEntry, arg, STACK_TOP(sMainStack), THREAD_PRI_MAIN);
     osStartThread(&sMainThread);
-
+#ifdef TARGET_WII
+    PORT_LOG("idle:main-started");
+    /* On Wii the idle thread has no work. osStopThread(NULL) suspends the
+     * calling (idle) thread forever without spinning, so it cannot starve
+     * the game threads. The VI is driven by the game's scheduler via
+     * port_present(), not by a pump. */
+    osStopThread(NULL);
+#else
     while (true) {
         D_8000E190();
     }
+#endif
 }

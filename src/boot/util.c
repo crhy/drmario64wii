@@ -3,6 +3,9 @@
 #include "libc/math.h"
 #include "gzip.h"
 #include "alignment.h"
+#ifdef UNCOMPRESSED_ROM
+#include "dmadata.h"
+#endif
 
 /**
  * Original name: ExpandGZip

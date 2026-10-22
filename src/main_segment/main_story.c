@@ -20,6 +20,10 @@
 #include "lws.h"
 #include "calcsub.h"
 
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
+
 #include "graphbin.h"
 
 #include "assets/coffee/coffee01.h"
@@ -941,6 +945,13 @@ s32 demo_title(Gfx **gfxP, bool flg21) {
     }
 
     MAKE_TRANSRATE_MATRIX(&mtx, 0, -120, -1900);
+
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("demo_title title_time=%d story_spot_cnt=%d title_wait=%d pressed=%x",
+             title_time, story_spot_cnt, title_wait, gControllerPressedButtons[main_joy[0]]);
+#endif
+#endif
 
     if ((story_spot_cnt > 0) && (gControllerPressedButtons[main_joy[0]] & ANY_BUTTON)) {
         if (flg) {

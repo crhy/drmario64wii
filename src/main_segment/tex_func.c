@@ -10,6 +10,30 @@
 
 #include "util.h"
 
+#ifdef TARGET_WII
+#include "port_img_hint.h"
+
+static PortImgHint s_hint[128];
+static int s_hint_i;
+
+void port_img_hint(Gfx **gfxP, const void *img, const void *tlut, int w, int h, int fmt, int siz, int tlut_mode) {
+    PortImgHint *e;
+
+    s_hint_i = (s_hint_i + 1) % 128;
+    e = &s_hint[s_hint_i];
+    e->magic = PORT_IMG_MAGIC;
+    e->img = img;
+    e->tlut = tlut;
+    e->w = (u16)w;
+    e->h = (u16)h;
+    e->fmt = (u8)fmt;
+    e->siz = (u8)siz;
+    e->tlut_mode = (u8)tlut_mode;
+    e->pad = 0;
+    gDPNoOpTag((*gfxP)++, (u32)(uintptr_t)e);
+}
+#endif
+
 /**
  * Original name: copy_texture_init_dl
  */
@@ -203,6 +227,10 @@ void CopyTexBlock4_LoadTex(CONST_ARG SCopyTexBlock *st) {
 void CopyTexBlock4(Gfx **gfxP, const u16 tlut[], const u8 tex[], s32 x, s32 y, s32 w, s32 h) {
     SCopyTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, tlut, w, h, G_IM_FMT_CI, G_IM_SIZ_4b,
+                  (tlut != NULL) ? G_TT_RGBA16 : G_TT_NONE);
+#endif
     st.gfxP = gfxP;
 
     st.tex = tex;
@@ -237,6 +265,10 @@ void CopyTexBlock8_LoadTex(CONST_ARG SCopyTexBlock *st) {
 void CopyTexBlock8(Gfx **gfxP, const u16 tlut[], const u8 tex[], s32 x, s32 y, s32 w, s32 h) {
     SCopyTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, tlut, w, h, G_IM_FMT_CI, G_IM_SIZ_8b,
+                  (tlut != NULL) ? G_TT_RGBA16 : G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.tex = tex;
     st.x = x;
@@ -270,6 +302,9 @@ void CopyTexBlock16_LoadTex(CONST_ARG SCopyTexBlock *st) {
 void CopyTexBlock16(Gfx **gfxP, const u16 tex[], s32 x, s32 y, s32 w, s32 h) {
     SCopyTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, NULL, w, h, G_IM_FMT_RGBA, G_IM_SIZ_16b, G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.tex = tex;
 
@@ -481,6 +516,10 @@ void StretchTexBlock4_LoadTex(CONST_ARG SStretchTexBlock *st) {
 void StretchTexBlock4(Gfx **gfxP, s32 texW, s32 texH, const u16 tlut[], const u8 tex[], f32 x, f32 y, f32 w, f32 h) {
     SStretchTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, tlut, texW, texH, G_IM_FMT_CI, G_IM_SIZ_4b,
+                  (tlut != NULL) ? G_TT_RGBA16 : G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vpp = NULL;
     st.texW = texW;
@@ -525,6 +564,10 @@ void StretchTexBlock8_LoadTex(CONST_ARG SStretchTexBlock *st) {
 void StretchTexBlock8(Gfx **gfxP, s32 texW, s32 texH, const u16 tlut[], const u8 tex[], f32 x, f32 y, f32 w, f32 h) {
     SStretchTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, tlut, texW, texH, G_IM_FMT_CI, G_IM_SIZ_8b,
+                  (tlut != NULL) ? G_TT_RGBA16 : G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vpp = NULL;
     st.texW = texW;
@@ -569,6 +612,9 @@ void StretchTexBlock16_LoadTex(CONST_ARG SStretchTexBlock *st) {
 void StretchTexBlock16(Gfx **gfxP, s32 texW, s32 texH, const u16 tex[], f32 x, f32 y, f32 w, f32 h) {
     SStretchTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, NULL, texW, texH, G_IM_FMT_RGBA, G_IM_SIZ_16b, G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vpp = NULL;
     st.texW = texW;
@@ -608,6 +654,9 @@ void StretchTexBlock4i_LoadTex(CONST_ARG SStretchTexBlock *st) {
 void StretchTexBlock4i(Gfx **gfxP, s32 texW, s32 texH, const u8 tex[], f32 x, f32 y, f32 w, f32 h) {
     SStretchTexBlock st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, NULL, texW, texH, G_IM_FMT_I, G_IM_SIZ_4b, G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vpp = NULL;
 
@@ -948,6 +997,10 @@ void StretchTexTile4(Gfx **gfxP, s32 texW, s32 texH, const u16 tlut[], const u8 
                      f32 x, f32 y, f32 w, f32 h) {
     SStretchTexTile st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, tlut, texW, texH, G_IM_FMT_CI, G_IM_SIZ_4b,
+                  (tlut != NULL) ? G_TT_RGBA16 : G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vtxP = NULL;
 
@@ -998,6 +1051,10 @@ void StretchTexTile8(Gfx **gfxP, s32 texW, s32 texH, const u16 tlut[], const u8 
                      f32 x, f32 y, f32 w, f32 h) {
     SStretchTexTile st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, tlut, texW, texH, G_IM_FMT_CI, G_IM_SIZ_8b,
+                  (tlut != NULL) ? G_TT_RGBA16 : G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vtxP = NULL;
 
@@ -1088,6 +1145,9 @@ void StretchTexTile16(Gfx **gfxP, s32 texW, s32 texH, const u16 tex[], s32 lx, s
                       f32 w, f32 h) {
     SStretchTexTile st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, NULL, texW, texH, G_IM_FMT_RGBA, G_IM_SIZ_16b, G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vtxP = NULL;
 
@@ -1135,6 +1195,9 @@ void StretchTexTile4i(Gfx **gfxP, s32 texW, s32 texH, const u8 tex[], s32 lx, s3
                       f32 w, f32 h) {
     SStretchTexTile st;
 
+#ifdef TARGET_WII
+    port_img_hint(gfxP, tex, NULL, texW, texH, G_IM_FMT_I, G_IM_SIZ_4b, G_TT_NONE);
+#endif
     st.gfxP = gfxP;
     st.vtxP = NULL;
 

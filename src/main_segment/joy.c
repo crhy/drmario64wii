@@ -9,6 +9,10 @@
 #include "gateway.h"
 #include "nnsched.h"
 
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
+
 /**
  * Original name: joycur
  */
@@ -114,6 +118,12 @@ s32 joyInit(s32 arg0 UNUSED) {
 void joyProcCore(void) {
     u16 i;
 
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("joycore ENTER");
+#endif
+#endif
+
 #if VERSION_GW
     bool pressingOppositeDirections = false;
 #endif
@@ -125,8 +135,28 @@ void joyProcCore(void) {
 #endif
 
     osContStartReadData(&B_800F3E38);
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("joycore pre-recv");
+#endif
+#endif
     osRecvMesg(&B_800F3E38, NULL, OS_MESG_BLOCK);
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+    PORT_LOG("joycore post-recv");
+#endif
+#endif
     osContGetReadData(B_800EB4D8);
+#ifdef TARGET_WII
+    {
+        static int s_jc_prev = -1;
+        int s_jc_sig = (int)B_800EB4D8[0].button * 0x10000 + (int)gControllerPressedButtons[0];
+        if (s_jc_sig != s_jc_prev) {
+            s_jc_prev = s_jc_sig;
+            PORT_LOG("jc b=%x pressed=%x mj0=%d", (unsigned)B_800EB4D8[0].button, (unsigned)gControllerPressedButtons[0], (int)main_joy[0]);
+        }
+    }
+#endif
 
 #if VERSION_GW
     for (i = 0; i < MAXCONTROLLERS; i++) {
@@ -189,6 +219,15 @@ void joyProcCore(void) {
         }
 
         gControllerPrevHoldButtons[i] = gControllerHoldButtons[i];
+
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+        if (i == 0) {
+            PORT_LOG("joy0 button=%x pressed=%x hold=%x", B_800EB4D8[0].button,
+                     gControllerPressedButtons[0], gControllerHoldButtons[0]);
+        }
+#endif
+#endif
     }
 
 #ifdef NN_SC_PERF

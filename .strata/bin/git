@@ -1,0 +1,7 @@
+#!/bin/bash
+# Harness guard: Strata may read git state but never discard or move work (it once ran `git checkout HEAD -- .`).
+case "$1" in
+  checkout|restore|reset|stash|clean|switch|rebase|commit|push|rm|mv)
+    echo "git $1: blocked by the drmario harness (see .strata/_header.md: never commit, push, stash, checkout, reset)" >&2; exit 1;;
+esac
+exec /usr/bin/git "$@"

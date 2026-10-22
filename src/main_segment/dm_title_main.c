@@ -14,6 +14,9 @@
 #include "graphic.h"
 #include "joy.h"
 #include "record.h"
+#ifdef TARGET_WII
+#include "port_log.h"
+#endif
 #include "vr_init.h"
 #include "main1x.h"
 #include "tex_func.h"
@@ -86,11 +89,17 @@ enum_main_no dm_title_main(NNSched *sc) {
 
     osCreateMesgQueue(&scMQ, scMsgBuf, ARRAY_COUNT(scMsgBuf));
     nnScAddClient(sc, &scClient, &scMQ);
+#ifdef TARGET_WII
+    PORT_LOG("title scMQ=%p", (void *)&scMQ);
+#endif
 
     sgenrand(osGetCount());
     func_80075F30();
     evs_playmax = joyResponseCheck();
     osRecvMesg(&scMQ, NULL, OS_MESG_BLOCK);
+#ifdef TARGET_WII
+    PORT_LOG("title preloop recv done");
+#endif
 
 #ifndef NN_SC_PERF
     graphic_no = GRAPHIC_NO_2;
@@ -99,6 +108,11 @@ enum_main_no dm_title_main(NNSched *sc) {
     do {
         joyProcCore();
         osRecvMesg(&scMQ, NULL, OS_MESG_BLOCK);
+#ifdef TARGET_WII
+#ifdef PORT_LOG_VERBOSE
+        PORT_LOG("title loop recv done");
+#endif
+#endif
 
 #ifdef NN_SC_PERF
         if (D_80092F10_cn) {
